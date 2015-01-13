@@ -5,6 +5,19 @@
 #include <iomanip>
 using namespace std;
 
+// configuration
+#define CLK_15MIN (15*60*CLOCKS_PER_SEC)
+#define CLK_30S (30*CLOCKS_PER_SEC)
+#define CLK_70S (70*CLOCKS_PER_SEC)
+#define INIT_STEP 0	// 0
+//0: init; 1: wait 30s until attacking skill finish; 2: seeking treasure; 
+//3: wait 70s until golden strike finish; wait 15min until dark ritual ready; 
+//4: wait 15min until reload ready
+#define INIT_WAIT15MIN (-CLK_15MIN)	// (-CLK_15MIN)
+#define INIT_WAIT30S (-0)	// (-0)
+#define INIT_WAIT70S (-0)	// (-0)
+#define MAX_COUNT 30		// max number of attempt to refresh page to find a treasure
+
 #ifdef _UNICODE
 #define tcout wcout
 #define tstrcmp wcscmp
@@ -17,10 +30,13 @@ using namespace std;
 
 bool IsProgressMode(HWND);
 bool IsTreasureChest(HWND);
+bool IsLoadComplete(HWND);
 void UseSkill(HWND, int);
 void EnableProgressMode(HWND, bool);
 void Upgrade(HWND);
 void Attack(HWND);
+
+void Click(HWND, int, int);
 
 void Timestamp()
 {
@@ -32,6 +48,24 @@ void Timestamp()
 #define DELAY 50
 #define FASTDELAY 10
 #define ERROR_FOUND ((1<<29)+1)
+BOOL CALLBACK FindMozillaToRefresh(HWND hwnd, LPARAM ret)
+{
+	const int MAX_CLASSNAME = 256;
+	TCHAR classname[MAX_CLASSNAME];
+	auto len = RealGetWindowClass(hwnd, classname, MAX_CLASSNAME);
+	if (tstrcmp(classname, _T("MozillaWindowClass")) == 0)
+	{
+		const int MAX_CAPTION = 256;
+		TCHAR caption[MAX_CAPTION];
+		len = GetWindowText(hwnd, caption, MAX_CAPTION);
+		if (tstrstr(caption, _T("Clicker Heroes")))
+		{
+			Click(hwnd, 1341, 51);
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
 BOOL CALLBACK FindMozillaInDesktop(HWND hwnd, LPARAM ret)
 {
 	const int MAX_CLASSNAME = 256;
@@ -75,6 +109,19 @@ HWND FindTargetHWND()
 		return 0;
 	}
 	return hwnd;
+}
+HWND RefreshMozilla()
+{
+	HWND hwnd = 0;
+	BOOL bRet = EnumWindows(FindMozillaToRefresh, (LPARAM)&hwnd);
+	if (!bRet && GetLastError()!=ERROR_FOUND)
+	{
+		tcout << _T("EnumWindows(FindMozilla) Fail; GetLastError() = ") << GetLastError() << endl;
+		system("pause");
+		return 0;
+	}
+	Sleep(3000);
+	return FindTargetHWND();
 }
 
 void ClickWithDelay(HWND hwnd, int x, int y, int delay)
@@ -125,8 +172,8 @@ bool IsProgressMode(HWND hwnd)
 	RECT rect;
 	GetWindowRect(hwnd, &rect);
 	//ref: window size: 1136x642, progress icon pos: (1114,210)
-	int x = 1114 * ( rect.right - rect.left ) / 1136;
-	int y = 210 * ( rect.bottom - rect.top ) / 642;
+	int x = 1114;
+	int y = 210;
 	bool found = false;
 	for (int h = -3; h <= 3; h++)
 	{
@@ -146,13 +193,27 @@ bool IsTreasureChest(HWND hwnd)
 	RECT rect;
 	GetWindowRect(hwnd, &rect);
 	//ref: window size: 1136x642, chest pos: (830,336)
-	int x = 830 * ( rect.right - rect.left ) / 1136;
-	int y = 336 * ( rect.bottom - rect.top ) / 642;
 	bool found = false;
+	int x = 955;
+	int y = 313;
 	COLORREF clr = GetPixel(dc, x, y);
-	found = (GetRValue(clr) == 196 && GetGValue(clr) == 133 && GetBValue(clr) == 44);
+	found = (GetRValue(clr) == 169 && GetGValue(clr) == 110 && GetBValue(clr) == 37);
 	ReleaseDC(hwnd, dc);
 	return found;	// if found chest color
+}
+bool IsLoadComplete(HWND hwnd)
+{
+	// must NOT resize (i.e. 100%)
+	HDC dc = GetDC(hwnd);
+	RECT rect;
+	GetWindowRect(hwnd, &rect);
+	int x = 557;
+	int y = 277;
+	bool found = false;
+	COLORREF clr = GetPixel(dc, x, y);
+	found = (GetRValue(clr) == 254 && GetGValue(clr) == 254 && GetBValue(clr) == 254);
+	ReleaseDC(hwnd, dc);
+	return found;	// if found color of play button
 }
 void UseSkill(HWND hwnd, int i)
 {
@@ -209,10 +270,11 @@ int main()
 	{
 		tcout << _T("Could not find the target windows!") << endl;
 	}
-	int step = 0;
-	clock_t wait30s, wait15min;
-	clock_t wait70s;	// My Kleptos' level is 20, so it would last 70 sec
-	wait15min = clock() - 15 * 60 * CLOCKS_PER_SEC + 2000;	// to ensure the first time would execute directly
+	int step = INIT_STEP;
+	clock_t now = clock();
+	clock_t wait30s = now + INIT_WAIT30S;
+	clock_t wait15min = now + INIT_WAIT15MIN;	// to ensure the first time would execute directly
+	clock_t wait70s = now + INIT_WAIT70S;	// My Kleptos' level is 20, so it would last 70 sec
 	while (true)
 	{
 		switch (step)
@@ -225,59 +287,106 @@ int main()
 			UseSkill(hwnd, 2);
 			UseSkill(hwnd, 3);
 			UseSkill(hwnd, 7);
-			step++;
+			step = 1;
 			wait30s = clock();
 			break;
 		case 1: // wait 1, 2, 3, 7 skill finish
 			for (int i = 0; i < 100; i++)
-				FastAttack(hwnd);
-			if (clock() - wait30s > 30 * CLOCKS_PER_SEC)
+				Attack(hwnd);
+			if (clock() - wait30s > CLK_30S)
 			{
 				Timestamp();
 				tcout << _T("Time's Up, try to find treasure chest...") << endl;
-				step++;
+				step = 2;
 			}
 			break;
 		case 2:	// wait treasure chest
 			for (int i = 0; i < 100; i++)
 				Attack(hwnd);
-			if (IsTreasureChest(hwnd))
+			if (!IsTreasureChest(hwnd))
+			{
+				if (clock() - wait15min > CLK_15MIN*2/3)
+				{
+					Timestamp();
+					tcout << _T("It took too long... Try refresh to speed up the seeking process...") << endl;		
+					int count = 0;
+					do
+					{
+						count++;
+						tcout << count << _T(" attempt...\r");
+						if (count > MAX_COUNT)
+						{
+							tcout << endl;
+							Timestamp();
+							tcout << _T("Too many attempt... Might be stuck in boss stage, so try to retreat from...") << endl;		
+							// probability ~= 0.9^30 ~= 0.05, maybe stuck in the boss stage
+							Click(hwnd, 557, 277);	// click play
+							Sleep(5000);
+							Click(hwnd, 935, 75);	// click close message
+							Sleep(3000);
+							EnableProgressMode(hwnd, true);
+							Sleep(63 * CLOCKS_PER_SEC);		// to retreat from boss stage; wait 1 min to save
+							count = 0;
+						}
+						hwnd = RefreshMozilla();
+						do
+						{
+							Sleep(1000);
+						}
+						while (!IsLoadComplete(hwnd));
+						Click(hwnd, 557, 277);	// click play
+						Sleep(5000);
+					}
+					while (!IsTreasureChest(hwnd));
+					tcout << endl;
+					Click(hwnd, 935, 75);	// click close message
+					Sleep(3000);
+					for (int i = 0; i < 10; i++)	// click scroll bar to let the Samurai to be the target hero
+					{
+						Click(hwnd, 549, 620);
+						Sleep(200);
+					}
+				}
+				else
+					continue;
+			}
+			Timestamp();
+			tcout << _T("Find a treasure chest! Use skill 4, 5 and wait 70 sec...") << endl;
+			UseSkill(hwnd, 4);
+			UseSkill(hwnd, 5);
+			step = 3;
+			wait70s = clock();
+			break;
+		case 3:	// wait golden strike
+			for (int i = 0; i < 100; i++)
+				FastAttack(hwnd);
+			if (clock() - wait70s > CLK_70S)
 			{
 				Timestamp();
-				tcout << _T("Find a treasure chest! Use skill 4, 5 and wait 15 min to use Dark Ritual...") << endl;
-				UseSkill(hwnd, 4);
-				UseSkill(hwnd, 5);
-				step = 3;
-				wait70s = clock();
+				tcout << _T("Golden strike finished, upgrade heroes and wait 15 min to use Dark Ritual...") << endl;
+				for (int i = 0; i < 25; i++)
+					Upgrade(hwnd);
+				step = 4;
 			}
 			break;
-		case 3:	// use Dark Ritual
-			if (clock() - wait70s > 70 * CLOCKS_PER_SEC + 2 * CLOCKS_PER_SEC)
-			{
-				for (int i = 0; i < 100; i++)
-					Attack(hwnd);
-			}
-			else
-			{
-				for (int i = 0; i < 100; i++)
-					FastAttack(hwnd);
-			}
-			Upgrade(hwnd);
-			if (clock() - wait15min > 15 * 60 * CLOCKS_PER_SEC + 2 * CLOCKS_PER_SEC)
+		case 4: // wait 15 min to use Dark Ritual
+			for (int i = 0; i < 100; i++)
+				Attack(hwnd);
+			if (clock() - wait15min > CLK_15MIN)
 			{
 				Timestamp();
 				tcout << _T("Time's Up, use Dark Ritual and wait 15 min to reload Dark Ritual...") << endl;
 				UseSkill(hwnd, 8);
 				UseSkill(hwnd, 6);
 				UseSkill(hwnd, 9);
-				step = 4;
+				step = 5;
 				wait15min = clock();
 			}
 			break;
-		case 4:
+		case 5:	// wait 15 min to reload dark ritual
 			for (int i = 0; i < 100; i++)
 				Attack(hwnd);
-			if (clock() - wait15min > 15 * 60 * CLOCKS_PER_SEC + 2 * CLOCKS_PER_SEC)
+			if (clock() - wait15min > CLK_15MIN)
 			{
 				Timestamp();
 				tcout << _T("Time's Up, use Reload and go back to step 0") << endl;
