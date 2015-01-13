@@ -14,8 +14,8 @@ using namespace std;
 //3: wait 70s until golden strike finish; wait 15min until dark ritual ready; 
 //4: wait 15min until reload ready
 #define INIT_WAIT15MIN (-CLK_15MIN)	// (-CLK_15MIN)
-#define INIT_WAIT30S (-0)	// (-0)
-#define INIT_WAIT70S (-0)	// (-0)
+#define INIT_WAIT30S (-CLK_30S)		// (-CLK_30S)
+#define INIT_WAIT70S (-CLK_70S)		// (-CLK_70S)
 #define MAX_COUNT 30		// max number of attempt to refresh page to find a treasure
 
 #ifdef _UNICODE
@@ -275,6 +275,15 @@ int main()
 	clock_t wait30s = now + INIT_WAIT30S;
 	clock_t wait15min = now + INIT_WAIT15MIN;	// to ensure the first time would execute directly
 	clock_t wait70s = now + INIT_WAIT70S;	// My Kleptos' level is 20, so it would last 70 sec
+	tcout << _T("Select the step (0: all skills available; 2: 45689 available; 4: 689 available; 5: 89 available): ");
+	cin >> step;
+	if (step == 5)
+	{
+		tcout << _T("wait time (second): ") ;
+		int ts;
+		cin >> ts;
+		wait15min += ts * CLOCKS_PER_SEC;
+	}
 	while (true)
 	{
 		switch (step)
