@@ -254,6 +254,17 @@ void FastAttack(HWND hwnd)
 	int y = 133 * ( rect.bottom - rect.top ) / 642;
 	FastClick(hwnd, x, y);
 }
+
+void SelectHero(HWND hwnd, int index, int total_heroes)
+{
+	//scroll thumb pos: upper: (548 246); lower: (548 569); screen height ~= 4.5; 
+	//tail (the "glided" button) ~= 1.4; Samurai=6; 
+	// 246=>0, 569=>27-4.5-1; ?=>6	==> ?=246+6*(569-246)/(27-4.5-1)
+	int y = 247 + (int)(index * (569-246)/((double)total_heroes-4.5+1.4));
+	Click(hwnd, 546, y);
+	Sleep(2000);
+}
+
 int main()
 {
 	// Note 1: When SendMessage WM_LBUTTONDOWN to chrome, it would popon to the foreground.
@@ -275,9 +286,13 @@ int main()
 	clock_t wait30s = now + INIT_WAIT30S;
 	clock_t wait15min = now + INIT_WAIT15MIN;	// to ensure the first time would execute directly
 	clock_t wait70s = now + INIT_WAIT70S;	// My Kleptos' level is 20, so it would last 70 sec
-	tcout << _T("Select the step (0: all skills available; 2: 45689 available; 4: 689 available; 5: 89 available): ");
+	int heroes = 27;
+	tcout << _T("Number of heroes (Forstleaf=26; Dread Knight=27; Atlas=28; Terra=29; Phthalo=30; Didensy=31): ");
+	cin >> heroes;
+
+	tcout << _T("Select the step (0: 1234567 available; 2: 45689 available; 4: 689 available; 5: 89 available): ");
 	cin >> step;
-	if (step == 5)
+	if (step == 0 || step == 5)
 	{
 		tcout << _T("wait time (second): ") ;
 		int ts;
@@ -338,9 +353,17 @@ int main()
 							count = 0;
 						}
 						hwnd = RefreshMozilla();
+						bool timeout = false;
+						clock_t start_loading = clock();
 						do
 						{
 							Sleep(1000);
+							if ( (clock() - start_loading) / CLOCKS_PER_SEC > 10 )
+							{
+								// unknown reason to stuck in loading; just refresh again
+								hwnd = RefreshMozilla();
+								start_loading = clock();
+							}
 						}
 						while (!IsLoadComplete(hwnd));
 						Click(hwnd, 557, 277);	// click play
@@ -350,11 +373,7 @@ int main()
 					tcout << endl;
 					Click(hwnd, 935, 75);	// click close message
 					Sleep(3000);
-					for (int i = 0; i < 10; i++)	// click scroll bar to let the Samurai to be the target hero
-					{
-						Click(hwnd, 549, 620);
-						Sleep(200);
-					}
+					SelectHero(hwnd, 6, heroes);	// select Samurai
 				}
 				else
 					continue;
