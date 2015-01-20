@@ -16,7 +16,7 @@ using namespace std;
 #define INIT_WAIT15MIN (-CLK_15MIN)	// (-CLK_15MIN)
 #define INIT_WAIT30S (-CLK_30S)		// (-CLK_30S)
 #define INIT_WAIT70S (-CLK_70S)		// (-CLK_70S)
-#define MAX_COUNT 30		// max number of attempt to refresh page to find a treasure
+#define MAX_COUNT 40		// max number of attempt to refresh page to find a treasure
 
 #ifdef _UNICODE
 #define tcout wcout
@@ -104,7 +104,7 @@ HWND FindTargetHWND()
 	BOOL bRet = EnumWindows(FindMozillaInDesktop, (LPARAM)&hwnd);
 	if (!bRet && GetLastError()!=ERROR_FOUND)
 	{
-		tcout << _T("EnumWindows(FindMozilla) Fail; GetLastError() = ") << GetLastError() << endl;
+		tcout << _T("EnumWindows(FindMozillaInDesktop) Fail; GetLastError() = ") << GetLastError() << endl;
 		system("pause");
 		return 0;
 	}
@@ -113,14 +113,17 @@ HWND FindTargetHWND()
 HWND RefreshMozilla()
 {
 	HWND hwnd = 0;
-	BOOL bRet = EnumWindows(FindMozillaToRefresh, (LPARAM)&hwnd);
-	if (!bRet && GetLastError()!=ERROR_FOUND)
+	while (true)
 	{
-		tcout << _T("EnumWindows(FindMozilla) Fail; GetLastError() = ") << GetLastError() << endl;
-		system("pause");
-		return 0;
+		BOOL bRet = EnumWindows(FindMozillaToRefresh, (LPARAM)&hwnd);
+		Sleep(3000);
+		if (!bRet && GetLastError()!=ERROR_FOUND)
+		{
+			tcout << _T("EnumWindows(FindMozillaToRefresh) Fail; GetLastError() = ") << GetLastError() << endl;
+			continue;
+		}
+		break;
 	}
-	Sleep(3000);
 	return FindTargetHWND();
 }
 
@@ -287,12 +290,12 @@ int main()
 	clock_t wait15min = now + INIT_WAIT15MIN;	// to ensure the first time would execute directly
 	clock_t wait70s = now + INIT_WAIT70S;	// My Kleptos' level is 20, so it would last 70 sec
 	int heroes = 27;
-	tcout << _T("Number of heroes (Forstleaf=26; Dread Knight=27; Atlas=28; Terra=29; Phthalo=30; Didensy=31): ");
+	tcout << _T("Number of heroes (Forstleaf=26; Dread Knight=27; Atlas=28;\n\tTerra=29; Phthalo=30; Didensy=31; Lilin=32): ");
 	cin >> heroes;
 
-	tcout << _T("Select the step (0: 1234567 available; 2: 45689 available; 4: 689 available; 5: 89 available): ");
+	tcout << _T("Select the step (0: all ready; 4: wait 689; 5: wait reload): ");
 	cin >> step;
-	if (step == 0 || step == 5)
+	if (step == 0 || step == 4 || step == 5)
 	{
 		tcout << _T("wait time (second): ") ;
 		int ts;
@@ -343,12 +346,13 @@ int main()
 							tcout << endl;
 							Timestamp();
 							tcout << _T("Too many attempt... Might be stuck in boss stage, so try to retreat from...") << endl;		
-							// probability ~= 0.9^30 ~= 0.05, maybe stuck in the boss stage
+							// probability ~= 0.9^40 ~= 0.05, maybe stuck in the boss stage
 							Click(hwnd, 557, 277);	// click play
 							Sleep(5000);
 							Click(hwnd, 935, 75);	// click close message
 							Sleep(3000);
 							EnableProgressMode(hwnd, true);
+							break;	// just give up...
 							Sleep(63 * CLOCKS_PER_SEC);		// to retreat from boss stage; wait 1 min to save
 							count = 0;
 						}
@@ -357,7 +361,7 @@ int main()
 						clock_t start_loading = clock();
 						do
 						{
-							Sleep(1000);
+							Sleep(3000);
 							if ( (clock() - start_loading) / CLOCKS_PER_SEC > 10 )
 							{
 								// unknown reason to stuck in loading; just refresh again
